@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaderboard</title>
+</head>
+<body>
+<div id='app'></div>
+<script type='text/javascript'>
+  (function () {
+    // Configuration
+    const SHEET_ID = '12paFULTx_tdDddzzUPDmZ9jVHA8f16sKLniygv9fDk4';
+    const API_KEY = 'AIzaSyAygA1sQc0pYty_p6LLLDd1_0noh5zGly0';
+
+    // Google Sheets API endpoints
+    const PARTICIPANT_LOOKUP_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Participant%20lookup!A:C?key=${API_KEY}`;
+    const FORM_RESPONSES_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Form%20Responses!A:K?key=${API_KEY}`;
+    const WEEKS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Weeks!B2:C2?key=${API_KEY}`;
+    const POINTS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Points!A:F?key=${API_KEY}`;
+
+    // Main app container
+    const app = document.getElementById('app');
+    if (!app) {
+      console.error('No #app div found in the webpage.');
+      return;
+    }
+
+    // CSS for styling
+    const style = document.createElement('style');
+    style.textContent = `
+      #app { font-family: Arial, sans-serif; max-width: 100%; margin: 0 auto; padding: 10px; box-sizing: border-box; }
+      .leaderboard { text-align: center; }
+      .podium { display: flex; justify-content: center; align-items: flex-end; margin-bottom: 20px; }
+      .podium-item { padding: 10px; border-radius: 5px; margin: 0 10px; }
+      .first-place { background-color: #ffd700; width: 200px; height: 150px; display: flex; flex-direction: column; justify-content: center; }
+      .second-place { background-color: #c0c0c0; width: 150px; height: 120px; display: flex; flex-direction: column; justify-content: center; }
+      .third-place { background-color: #cd7f32; width: 150px; height: 100px; display: flex; flex-direction: column; justify-content: center; }
+      .other-ranks { display: flex; justify-content: space-between; }
+      .column { flex: 1; margin: 0 10px; }
+      .rank-item { padding: 8px; border: 1px solid #ddd; margin-bottom: 5px; border-radius: 5px; }
+      .rank-item.clickable { cursor: pointer; color: blue; text-decoration: underline; }
+      .rank-item.clickable:hover { color: darkblue; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background-color: #f2f2f2; }
+      tr.strike { text-decoration: line-through; color: #888; }
+      span.strike { text-decoration: line-through; color: #888; }
+      tfoot td { font-weight: bold; background-color: #e6e6e6; }
+      button { margin: 10px 0; padding: 8px 16px; }
+      .week-details { display: none; margin-top: 10px; }
+      .week-details.active { display: block; }
+      .clickable { cursor: pointer; color: blue; text-decoration: underline; }
+      .clickable:hover { color: darkblue; }
+      @media (max-width: 800px) {
+        table { font-size: 0.8em; }
+        .podium { flex-direction: column; align-items: center; }
+        .podium-item { width: 100%; margin: 5px 0; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Global data
+    let participantLookup = {};
+    let formResponses = [];
+    let weeks = [];
+    let pointsConfig = [];
+    let leaderboardData = [];
+    let challengeStart = null;
+    let challengeEnd = null;
+    let currentScreen = 'leaderboard';
+
+    // Fetch data from Google Sheets
+    async function fetchData() {
+      try {
+        const [lookupResponse, formResponse, weeksResponse, pointsResponse] = await Promise.all([
+          fetch(PARTICIPANT_LOOKUP_URL).then(res => res.json()),
+          fetch(FORM_RESPONSES_URL).then(res => res.json()),
+          fetch(WEEKS_URL).then(res => res.json()),
+          fetch(POINTS_URL).then(res => res.json()),
+        ]);
+
+        // Parse Participant lookup
+        participantLookup = lookupResponse.values.slice(1).reduce((map, row) => {
+          const email = row[0];
+          const firstName = row[1] || '';
+          const lastName = row[2] || '';
+          map[email] = `${firstName} ${lastName}`.trim() || email.split('@')[0];
+          return map;
+        }, {});
+
+        // Parse Weeks and Challenge Period
+        const weeksData = weeksResponse.values;
+        const challengeRow = weeksData[0]; // Row 2: Challenge start, Duration in wks
+        challengeStart = new Date(challengeRow[0]); // B2: Challenge start
+        const durationWeeks = parseInt(challengeRow[1]) || 6; // C2: Duration in wks
+        challengeEnd = new Date(challengeStart);
+        challengeEnd.setDate(challengeEnd.getDate() + durationWeeks * 7 - 1);
+        challengeEnd.setHours(23, 59, 59, 999);
+
+        weeks = Array(durationWeeks).fill(null).map((_, i) => {
+          const startDate = new Date(challengeStart.getTime() + i * 7 * 24 * 60 * 60 * 1000);
+          const endDate = new Date(challengeStart.getTime() + (i + 1) * 7 * 24 * 60 * 60 * 1000 - 1);
+          return {
+            weekNumber: i + 1,
+            startDate,
+            endDate,
+          };
+        });
+
+        // Parse Form Responses
+        formResponses = formResponse.values.slice(1).map(row => {
+          const timestamp = new Date(row[0]);
+          return {
+            timestamp,
+            email: row[1],
+            habits: {
+              Protein: row[2] || '',
+              Carbs: row[3] || '',
+              Sleep: row[4] || '',
+              Fiber: row[5] || '',
+              Fasting: row[6] || '',
+              'Group class': row[7] || '',
+              'Body Building': row[8] || '',
+              'Social media': row[9] || '',
+              'InBody Scan': row[10] || '',
+            },
+          };
+        }).filter(sub => sub.timestamp >= challengeStart && sub.timestamp <= challengeEnd && !isNaN(sub.timestamp.getTime()));
+
+        // Parse Points
+        pointsConfig = pointsResponse.values.slice(1).map(row => ({
+          habit: row[0].trim(),
+          pointsPerHabit: parseInt(row[1]) || 0,
+          maxPointsPerWeek: parseInt(row[2]) || Infinity,
+          focusWeek: parseInt(row[3]) || 0,
+          bonusHabit: row[4] ? row[4].trim() : '',
+          bonusPoints: parseInt(row[5]) || 0,
+        })).filter(row => row.habit);
+
+        // Debug data
+        console.log('Challenge:', {challengeStart, challengeEnd});
+        console.log('Points Config:', pointsConfig);
+        formResponses.forEach(sub => {
+          if (sub.habits.Protein) {
+            console.log(`Protein submission at ${sub.timestamp.toLocaleString()}: ${sub.habits.Protein}`);
+          }
+        });
+
+        // Process data
+        processLeaderboard();
+        render();
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        app.innerHTML = '<p>Error loading data. Please try again later.</p>';
+      }
+    }
+
+    // Process leaderboard data
+    function processLeaderboard() {
+      const submissionsByEmail = {};
+
+      // Group submissions by email and filter by time (7 PM - 6:59 PM)
+      formResponses.forEach(sub => {
+        const hour = sub.timestamp.getHours();
+        const minute = sub.timestamp.getMinutes();
+        const isValidTime = hour >= 19 || (hour < 19 && minute <= 59);
+        if (!isValidTime) {
+          console.log(`Excluded submission at ${sub.timestamp.toLocaleString()} due to time filter`);
+          return;
+        }
+
+        if (!submissionsByEmail[sub.email]) {
+          submissionsByEmail[sub.email] = [];
+        }
+        submissionsByEmail[sub.email].push(sub);
+      });
+
+      // Calculate points for each participant
+      leaderboardData = Object.keys(submissionsByEmail).map(email => {
+        const submissions = submissionsByEmail[email];
+        const name = participantLookup[email] || email.split('@')[0];
+        const weeklyScores = {};
+
+        // Group submissions by week
+        submissions.forEach(sub => {
+          const week = weeks.find(w =>
+            sub.timestamp >= w.startDate && sub.timestamp <= w.endDate,
+          );
+          if (!week) {
+            console.log(`No week found for submission at ${sub.timestamp.toLocaleString()}`);
+            return;
+          }
+
+          const weekNumber = week.weekNumber;
+          if (!weeklyScores[weekNumber]) {
+            weeklyScores[weekNumber] = {
+              submissions: [],
+              habitPoints: {},
+              bonusPoints: 0,
+              totalPoints: 0,
+            };
+          }
+          weeklyScores[weekNumber].submissions.push(sub);
+        });
+
+        // Process each week
+        Object.keys(weeklyScores).forEach(weekNumber => {
+          const weekData = weeklyScores[weekNumber];
+          const submissionsByDay = {};
+          const weekStart = weeks.find(w => w.weekNumber === parseInt(weekNumber)).startDate;
+
+          // Group submissions by challenge day (7:00 PM to 6:59 PM next day)
+          weekData.submissions.forEach(sub => {
+            const date = new Date(sub.timestamp);
+            // Adjust to challenge day: 7:00 PM start
+            if (date.getHours() >= 19) {
+              date.setDate(date.getDate());
+            } else {
+              date.setDate(date.getDate() - 1);
+            }
+            date.setHours(19, 0, 0, 0);
+            const dateKey = date.toISOString();
+            // Calculate day number relative to week start
+            const dayNumber = Math.floor((date.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+            sub.dayNumber = dayNumber;
+            if (!submissionsByDay[dateKey]) {
+              submissionsByDay[dateKey] = [];
+            }
+            submissionsByDay[dateKey].push(sub);
+          });
+
+          // Keep all submissions, mark duplicates
+          weekData.submissions = [];
+          Object.values(submissionsByDay).forEach(daySubs => {
+            const sortedSubs = daySubs.sort((a, b) => b.timestamp - a.timestamp);
+            sortedSubs.forEach((sub, index) => {
+              sub.isDuplicate = index !== 0;
+              weekData.submissions.push(sub);
+            });
+          });
+          // Sort submissions by timestamp for display
+          weekData.submissions.sort((a, b) => a.timestamp - b.timestamp);
+
+          // Calculate points
+          const habitCounts = {};
+          pointsConfig.forEach(habit => {
+            habitCounts[habit.habit] = 0;
+          });
+
+          weekData.submissions.forEach(sub => {
+            sub.points = {};
+            sub.exceededMax = {};
+
+            // Skip point calculation for duplicates
+            if (sub.isDuplicate) {
+              pointsConfig.forEach(habit => {
+                sub.points[habit.habit] = 0;
+              });
+              return;
+            }
+
+            // Calculate habit points
+            pointsConfig.forEach(habit => {
+              if (sub.habits[habit.habit] && sub.habits[habit.habit].trim()) {
+                const points = habit.pointsPerHabit;
+                const maxPoints = habit.maxPointsPerWeek;
+                const currentCount = habitCounts[habit.habit] || 0;
+
+                if (currentCount < maxPoints) {
+                  const awardedPoints = Math.min(points, maxPoints - currentCount);
+                  sub.points[habit.habit] = awardedPoints;
+                  habitCounts[habit.habit] = (habitCounts[habit.habit] || 0) + awardedPoints;
+                } else {
+                  sub.points[habit.habit] = 0;
+                  sub.exceededMax[habit.habit] = true;
+                }
+              } else {
+                sub.points[habit.habit] = 0;
+              }
+            });
+
+            // Calculate bonus points
+            const focusHabit = pointsConfig.find(h => h.focusWeek === parseInt(weekNumber) && h.bonusHabit);
+            if (focusHabit && sub.habits[focusHabit.bonusHabit] && sub.habits[focusHabit.bonusHabit].trim()) {
+              weekData.bonusPoints += focusHabit.bonusPoints;
+              console.log(`Awarded ${focusHabit.bonusPoints} bonus points for ${focusHabit.bonusHabit} in Week ${weekNumber} at ${sub.timestamp.toLocaleString()}`);
+            }
+          });
+
+          // Total points for the week
+          weekData.habitPoints = habitCounts;
+          weekData.totalPoints = Object.values(habitCounts).reduce((sum, points) => sum + points, 0) + weekData.bonusPoints;
+        });
+
+        // Total points across all weeks
+        const totalPoints = Object.values(weeklyScores).reduce((sum, week) => sum + week.totalPoints, 0);
+
+        return {email, name, totalPoints, weeklyScores};
+      });
+
+      // Sort by total points
+      leaderboardData.sort((a, b) => b.totalPoints - a.totalPoints);
+    }
+
+    // Render the UI
+    function render() {
+      if (currentScreen === 'leaderboard') {
+        renderLeaderboard();
+      } else if (currentScreen.startsWith('participant_')) {
+        const email = currentScreen.split('_')[1];
+        renderParticipantReport(email);
+      }
+    }
+
+    // Render Leaderboard Screen
+    function renderLeaderboard() {
+      let html = `
+      <h1>Leaderboard</h1>
+      <div class='leaderboard'>
+        <div class='podium'>
+    `;
+
+      // Top 3 (Podium)
+      if (leaderboardData[0]) {
+        html += `
+        <div class='podium-item first-place'>
+          <div>🥇 #1</div>
+          <div class='clickable' onclick="showParticipantReport('${leaderboardData[0].email}')">${leaderboardData[0].name}</div>
+          <div>${leaderboardData[0].totalPoints} Points</div>
+        </div>
+      `;
+      }
+      html += `
+        </div>
+        <div class='podium'>
+    `;
+      if (leaderboardData[1]) {
+        html += `
+        <div class='podium-item second-place'>
+          <div>🥈 #2</div>
+          <div class='clickable' onclick="showParticipantReport('${leaderboardData[1].email}')">${leaderboardData[1].name}</div>
+          <div>${leaderboardData[1].totalPoints} Points</div>
+        </div>
+      `;
+      }
+      if (leaderboardData[2]) {
+        html += `
+        <div class='podium-item third-place'>
+          <div>🥉 #3</div>
+          <div class='clickable' onclick="showParticipantReport('${leaderboardData[2].email}')">${leaderboardData[0].name}</div>
+          <div>${leaderboardData[2].totalPoints} Points</div>
+        </div>
+      `;
+      }
+      html += `
+        </div>
+        <div class='other-ranks'>
+          <div class='column'>
+    `;
+
+      // Other ranks in three columns
+      const remaining = leaderboardData.slice(3);
+      const columnSize = Math.ceil(remaining.length / 3);
+      remaining.forEach((participant, index) => {
+        if (index > 0 && index % columnSize === 0) {
+          html += `</div><div class='column'>`;
+        }
+        html += `
+        <div class='rank-item'>
+          <div>#${index + 4}</div>
+          <div class='clickable' onclick="showParticipantReport('${participant.email}')">${participant.name}</div>
+          <div>${participant.totalPoints} Points</div>
+        </div>
+      `;
+      });
+
+      html += `
+          </div>
+        </div>
+      </div>
+    `;
+
+      app.innerHTML = html;
+    }
+
+    // Render Participant Report Screen
+    function renderParticipantReport(email) {
+      const participant = leaderboardData.find(p => p.email === email);
+      if (!participant) {
+        app.innerHTML = '<p>Participant not found.</p>';
+        return;
+      }
+
+      let html = `
+      <button onclick='showLeaderboard()'>Back to Leaderboard</button>
+      <h1>${participant.name}'s Report</h1>
+      <h3>Total Score: ${participant.totalPoints}</h3>
+    `;
+
+      // Weekly breakdown
+      Object.keys(participant.weeklyScores).sort((a, b) => a - b).forEach(weekNumber => {
+        const weekData = participant.weeklyScores[weekNumber];
+        const focusHabit = pointsConfig.find(h => h.focusWeek === parseInt(weekNumber) && h.bonusHabit);
+        const columnSums = pointsConfig.reduce((acc, h) => ({...acc, [h.habit]: 0}), {});
+        const bonusSums = pointsConfig.reduce((acc, h) => ({...acc, [h.habit]: 0}), {});
+        html += `
+          <h4 onclick="toggleWeekDetails('week_${weekNumber}')" class='clickable'>Week ${weekNumber} (Total: ${weekData.totalPoints}, Bonus: ${weekData.bonusPoints}${focusHabit ? ` for ${focusHabit.bonusHabit}` : ''})</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Habit</th>
+                <th>Points Earned</th>
+                <th>Bonus Points</th>
+                <th>Max Points</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        pointsConfig.forEach(habit => {
+          const isBonus = focusHabit && habit.habit === focusHabit.bonusHabit;
+          const habitBonusPoints = isBonus ? weekData.bonusPoints : 0;
+          html += `
+            <tr>
+              <td>${habit.habit}${isBonus ? ' (Bonus)' : ''}</td>
+              <td>${weekData.habitPoints[habit.habit] || 0}</td>
+              <td>${habitBonusPoints}</td>
+              <td>${habit.maxPointsPerWeek}</td>
+            </tr>
+          `;
+        });
+
+        html += `
+          </tbody>
+        </table>
+        <div id='week_${weekNumber}' class='week-details'>
+          <h5>Daily Submissions for Week ${weekNumber}</h5>
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Day</th>
+                ${pointsConfig.map(h => `<th>${h.habit}</th>`).join('')}
+                <th>Bonus</th>
+                <th>Status</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        weekData.submissions.forEach(sub => {
+          const status = sub.isDuplicate
+            ? 'Duplicate'
+            : Object.keys(sub.exceededMax).length
+              ? `Exceeded Max: ${Object.keys(sub.exceededMax).join(', ')}`
+              : 'Accepted';
+          let rowTotal = 0;
+          let bonusPoints = 0;
+          if (!sub.isDuplicate) {
+            pointsConfig.forEach(habit => {
+              if (!sub.exceededMax[habit.habit]) {
+                rowTotal += sub.points[habit.habit] || 0;
+                columnSums[habit.habit] += sub.points[habit.habit] || 0;
+              }
+            });
+            if (focusHabit && sub.habits[focusHabit.bonusHabit] && sub.habits[focusHabit.bonusHabit].trim()) {
+              bonusPoints = focusHabit.bonusPoints;
+              bonusSums[focusHabit.bonusHabit] += bonusPoints;
+              rowTotal += bonusPoints;
+            }
+          }
+          html += `
+            <tr class='${sub.isDuplicate ? 'strike' : ''}'>
+              <td>${sub.timestamp.toLocaleString()}</td>
+              <td>Day ${sub.dayNumber}</td>
+              ${pointsConfig.map(h => `
+                <td>${sub.exceededMax[h.habit] ? `<span class='strike'>${sub.points[h.habit] || 0} (Max)</span>` : (sub.points[h.habit] || 0)}</td>
+              `).join('')}
+              <td>${sub.isDuplicate ? '-' : bonusPoints}</td>
+              <td>${status}</td>
+              <td>${sub.isDuplicate ? '-' : rowTotal}</td>
+            </tr>
+          `;
+        });
+
+        html += `
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th></th>
+                ${pointsConfig.map(h => `<td>${columnSums[h.habit]}</td>`).join('')}
+                <td>${weekData.bonusPoints}</td>
+                <td></td>
+                <td>${Object.values(columnSums).reduce((sum, val) => sum + val, 0) + weekData.bonusPoints}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+      });
+
+      app.innerHTML = html;
+    }
+
+    // Navigation functions
+    window.showLeaderboard = function () {
+      currentScreen = 'leaderboard';
+      render();
+    };
+
+    window.showParticipantReport = function (email) {
+      currentScreen = `participant_${email}`;
+      render();
+    };
+
+    window.toggleWeekDetails = function (weekId) {
+      const element = document.getElementById(weekId);
+      element.classList.toggle('active');
+    };
+
+    // Setup visibility observer for live updates
+    function setupVisibilityObserver() {
+      const appDiv = document.getElementById('app');
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting) {
+            console.log('Leaderboard is visible, refreshing data');
+            fetchData();
+          }
+        },
+        {threshold: 0.1}
+      );
+      observer.observe(appDiv);
+    }
+
+    // Initialize
+    fetchData().then(setupVisibilityObserver);
+  })();
+</script>
+</body>
+</html>
