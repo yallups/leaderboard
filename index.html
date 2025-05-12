@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'self' https://www.canva.com;">
     <title>Leaderboard</title>
 </head>
 <body>
@@ -29,7 +30,7 @@
     // CSS for styling
     const style = document.createElement('style');
     style.textContent = `
-      #app { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+      #app { font-family: Arial, sans-serif; max-width: 100%; margin: 0 auto; padding: 10px; box-sizing: border-box; }
       .leaderboard { text-align: center; }
       .podium { display: flex; justify-content: center; align-items: flex-end; margin-bottom: 20px; }
       .podium-item { padding: 10px; border-radius: 5px; margin: 0 10px; }
@@ -41,17 +42,28 @@
       .rank-item { padding: 8px; border: 1px solid #ddd; margin-bottom: 5px; border-radius: 5px; }
       .rank-item.clickable { cursor: pointer; color: blue; text-decoration: underline; }
       .rank-item.clickable:hover { color: darkblue; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
       th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
       th { background-color: #f2f2f2; }
       tr.strike { text-decoration: line-through; color: #888; }
       span.strike { text-decoration: line-through; color: #888; }
       tfoot td { font-weight: bold; background-color: #e6e6e6; }
-      button { margin: 10px 0; padding: 8px 16px; }
+      button { margin: 10px 0; padding: 8px 16px; cursor: pointer; }
       .week-details { display: none; margin-top: 10px; }
       .week-details.active { display: block; }
       .clickable { cursor: pointer; color: blue; text-decoration: underline; }
       .clickable:hover { color: darkblue; }
+      .error-message { color: red; text-align: center; }
+      @media (max-width: 800px) {
+        table { font-size: 0.8em; }
+        .podium { flex-direction: column; align-items: center; }
+        .podium-item { width: 100%; max-width: 300px; margin: 5px 0; }
+        .first-place, .second-place, .third-place { height: auto; min-height: 100px; }
+      }
+      @media (max-width: 600px) {
+        table { font-size: 0.7em; }
+        th, td { padding: 4px; }
+      }
     `;
     document.head.appendChild(style);
 
@@ -312,7 +324,7 @@
       <h1>Leaderboard</h1>
       <div class='leaderboard'>
         <div class='podium'>
-    `;
+      `;
 
       // Top 3 (Podium)
       if (leaderboardData[0]) {
@@ -327,7 +339,7 @@
       html += `
         </div>
         <div class='podium'>
-    `;
+      `;
       if (leaderboardData[1]) {
         html += `
         <div class='podium-item second-place'>
@@ -350,7 +362,7 @@
         </div>
         <div class='other-ranks'>
           <div class='column'>
-    `;
+      `;
 
       // Other ranks in three columns
       const remaining = leaderboardData.slice(3);
