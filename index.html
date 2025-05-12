@@ -8,7 +8,7 @@
 <body>
 <div id='app'></div>
 <script type='text/javascript'>
-  (function () {
+  (function() {
     // Configuration
     const SHEET_ID = '12paFULTx_tdDddzzUPDmZ9jVHA8f16sKLniygv9fDk4';
     const API_KEY = 'AIzaSyAygA1sQc0pYty_p6LLLDd1_0noh5zGly0';
@@ -16,7 +16,7 @@
     // Google Sheets API endpoints
     const PARTICIPANT_LOOKUP_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Participant%20lookup!A:C?key=${API_KEY}`;
     const FORM_RESPONSES_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Form%20Responses!A:K?key=${API_KEY}`;
-    const WEEKS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Weeks!B2:C2?key=${API_KEY}`;
+    const WEEKS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Weeks!A:C?key=${API_KEY}`;
     const POINTS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Points!A:F?key=${API_KEY}`;
 
     // Main app container
@@ -29,7 +29,7 @@
     // CSS for styling
     const style = document.createElement('style');
     style.textContent = `
-      #app { font-family: Arial, sans-serif; max-width: 100%; margin: 0 auto; padding: 10px; box-sizing: border-box; }
+      #app { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
       .leaderboard { text-align: center; }
       .podium { display: flex; justify-content: center; align-items: flex-end; margin-bottom: 20px; }
       .podium-item { padding: 10px; border-radius: 5px; margin: 0 10px; }
@@ -41,7 +41,7 @@
       .rank-item { padding: 8px; border: 1px solid #ddd; margin-bottom: 5px; border-radius: 5px; }
       .rank-item.clickable { cursor: pointer; color: blue; text-decoration: underline; }
       .rank-item.clickable:hover { color: darkblue; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
       th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
       th { background-color: #f2f2f2; }
       tr.strike { text-decoration: line-through; color: #888; }
@@ -52,11 +52,6 @@
       .week-details.active { display: block; }
       .clickable { cursor: pointer; color: blue; text-decoration: underline; }
       .clickable:hover { color: darkblue; }
-      @media (max-width: 800px) {
-        table { font-size: 0.8em; }
-        .podium { flex-direction: column; align-items: center; }
-        .podium-item { width: 100%; margin: 5px 0; }
-      }
     `;
     document.head.appendChild(style);
 
@@ -92,11 +87,9 @@
         // Parse Weeks and Challenge Period
         const weeksData = weeksResponse.values;
         const challengeRow = weeksData[0]; // Row 2: Challenge start, Duration in wks
-        challengeStart = new Date(challengeRow[0]); // B2: Challenge start
-        const durationWeeks = parseInt(challengeRow[1]) || 6; // C2: Duration in wks
-        challengeEnd = new Date(challengeStart);
-        challengeEnd.setDate(challengeEnd.getDate() + durationWeeks * 7 - 1);
-        challengeEnd.setHours(23, 59, 59, 999);
+        const durationWeeks = parseInt(weeksData[1][1]) || 6;
+        challengeStart = new Date(challengeRow[1]);
+        challengeEnd = new Date(weeksData[2][1]);
 
         weeks = Array(durationWeeks).fill(null).map((_, i) => {
           const startDate = new Date(challengeStart.getTime() + i * 7 * 24 * 60 * 60 * 1000);
@@ -139,7 +132,7 @@
         })).filter(row => row.habit);
 
         // Debug data
-        console.log('Challenge:', {challengeStart, challengeEnd});
+        console.log('Challenge:', { challengeStart, challengeEnd });
         console.log('Points Config:', pointsConfig);
         formResponses.forEach(sub => {
           if (sub.habits.Protein) {
@@ -296,7 +289,7 @@
         // Total points across all weeks
         const totalPoints = Object.values(weeklyScores).reduce((sum, week) => sum + week.totalPoints, 0);
 
-        return {email, name, totalPoints, weeklyScores};
+        return { email, name, totalPoints, weeklyScores };
       });
 
       // Sort by total points
@@ -348,7 +341,7 @@
         html += `
         <div class='podium-item third-place'>
           <div>🥉 #3</div>
-          <div class='clickable' onclick="showParticipantReport('${leaderboardData[2].email}')">${leaderboardData[0].name}</div>
+          <div class='clickable' onclick="showParticipantReport('${leaderboardData[2].email}')">${leaderboardData[2].name}</div>
           <div>${leaderboardData[2].totalPoints} Points</div>
         </div>
       `;
@@ -402,8 +395,8 @@
       Object.keys(participant.weeklyScores).sort((a, b) => a - b).forEach(weekNumber => {
         const weekData = participant.weeklyScores[weekNumber];
         const focusHabit = pointsConfig.find(h => h.focusWeek === parseInt(weekNumber) && h.bonusHabit);
-        const columnSums = pointsConfig.reduce((acc, h) => ({...acc, [h.habit]: 0}), {});
-        const bonusSums = pointsConfig.reduce((acc, h) => ({...acc, [h.habit]: 0}), {});
+        const columnSums = pointsConfig.reduce((acc, h) => ({ ...acc, [h.habit]: 0 }), {});
+        const bonusSums = pointsConfig.reduce((acc, h) => ({ ...acc, [h.habit]: 0 }), {});
         html += `
           <h4 onclick="toggleWeekDetails('week_${weekNumber}')" class='clickable'>Week ${weekNumber} (Total: ${weekData.totalPoints}, Bonus: ${weekData.bonusPoints}${focusHabit ? ` for ${focusHabit.bonusHabit}` : ''})</h4>
           <table>
@@ -506,38 +499,23 @@
     }
 
     // Navigation functions
-    window.showLeaderboard = function () {
+    window.showLeaderboard = function() {
       currentScreen = 'leaderboard';
       render();
     };
 
-    window.showParticipantReport = function (email) {
+    window.showParticipantReport = function(email) {
       currentScreen = `participant_${email}`;
       render();
     };
 
-    window.toggleWeekDetails = function (weekId) {
+    window.toggleWeekDetails = function(weekId) {
       const element = document.getElementById(weekId);
       element.classList.toggle('active');
     };
 
-    // Setup visibility observer for live updates
-    function setupVisibilityObserver() {
-      const appDiv = document.getElementById('app');
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0].isIntersecting) {
-            console.log('Leaderboard is visible, refreshing data');
-            fetchData();
-          }
-        },
-        {threshold: 0.1}
-      );
-      observer.observe(appDiv);
-    }
-
     // Initialize
-    fetchData().then(setupVisibilityObserver);
+    fetchData();
   })();
 </script>
 </body>
