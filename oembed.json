@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "type": "rich",
+  "provider_name": "Leaderboard",
+  "provider_url": "https://yallups.github.io/leaderboard/",
+  "title": "Leaderboard",
+  "html": "<iframe src=\"https://yallups.github.io/leaderboard/\" width=\"100%\" height=\"600\" frameborder=\"0\" allowfullscreen></iframe>",
+  "width": 800,
+  "height": 600
+}
